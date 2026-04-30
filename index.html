@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mensajeria Pastel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="auth-panel" id="authPanel">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <h1>Mensajeria Pastel</h1>
+          <p>Chats suaves, archivos, emojis y stickers.</p>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Acceso">
+        <button class="tab-button active" id="loginTab" type="button">Iniciar sesion</button>
+        <button class="tab-button" id="registerTab" type="button">Registrarse</button>
+      </div>
+
+      <form class="auth-form active" id="loginForm" autocomplete="on">
+        <label>
+          Correo
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <label>
+          Contrasena
+          <input type="password" name="password" autocomplete="current-password" minlength="6" required>
+        </label>
+        <button class="primary-button" type="submit">Entrar</button>
+      </form>
+
+      <form class="auth-form" id="registerForm" autocomplete="on">
+        <label>
+          Nombre
+          <input type="text" name="name" autocomplete="name" pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+" maxlength="70" required>
+        </label>
+        <label>
+          Telefono
+          <input type="tel" name="phone" inputmode="numeric" pattern="[0-9]{7,15}" maxlength="15" required>
+        </label>
+        <label>
+          Correo
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <label>
+          Contrasena
+          <input type="password" name="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <button class="primary-button" type="submit">Crear cuenta</button>
+      </form>
+
+      <p class="status-text" id="authStatus" aria-live="polite"></p>
+    </section>
+
+    <section class="messenger hidden" id="messenger">
+      <aside class="sidebar">
+        <div class="profile-card">
+          <div class="avatar" id="userAvatar">U</div>
+          <div>
+            <strong id="userName">Usuario</strong>
+            <span id="userEmail">correo</span>
+          </div>
+        </div>
+
+        <div class="sidebar-actions">
+          <button class="ghost-button" id="editAccountBtn" type="button">Editar cuenta</button>
+          <button class="danger-button" id="deleteAccountBtn" type="button">Borrar cuenta</button>
+          <button class="ghost-button" id="logoutBtn" type="button">Salir</button>
+        </div>
+
+        <form class="account-form hidden" id="accountForm">
+          <label>
+            Nombre
+            <input type="text" name="name" pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+" maxlength="70" required>
+          </label>
+          <label>
+            Telefono
+            <input type="tel" name="phone" inputmode="numeric" pattern="[0-9]{7,15}" maxlength="15" required>
+          </label>
+          <button class="primary-button small" type="submit">Guardar</button>
+        </form>
+      </aside>
+
+      <section class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <h2>Chat general</h2>
+            <p id="chatHint">CRUD activo para mensajes y cuenta.</p>
+          </div>
+          <button class="ghost-button refresh" id="refreshBtn" type="button">Actualizar</button>
+        </header>
+
+        <div class="messages" id="messages" aria-live="polite"></div>
+
+        <form class="composer" id="messageForm">
+          <div class="picker-row hidden" id="emojiPicker"></div>
+          <div class="picker-row hidden" id="stickerPicker"></div>
+          <input type="hidden" name="editing_id" id="editingId">
+          <textarea name="body" id="messageBody" rows="1" maxlength="1200" placeholder="Escribe un mensaje"></textarea>
+          <input class="file-input" id="fileInput" type="file" name="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt,.zip">
+          <div class="composer-actions">
+            <button class="icon-button" id="emojiBtn" type="button" aria-label="Emojis">😊</button>
+            <button class="icon-button" id="stickerBtn" type="button" aria-label="Stickers">💟</button>
+            <label class="icon-button file-label" for="fileInput" aria-label="Archivo">📎</label>
+            <button class="primary-button send-button" type="submit">Enviar</button>
+          </div>
+          <p class="file-name" id="fileName"></p>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

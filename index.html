@@ -3,154 +3,152 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mensajeria Pastel</title>
+  <title>PastelChat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app-shell">
-    <section class="auth-panel" id="authPanel">
-      <div class="brand">
-        <div class="brand-mark">M</div>
+  <main class="page">
+    <section class="auth-card" id="authPanel">
+      <div class="logo-row">
+        <div class="logo">PC</div>
         <div>
-          <h1>Mensajeria Pastel</h1>
-          <p>Chats suaves, archivos, emojis y stickers.</p>
+          <h1>PastelChat</h1>
+          <p>Mensajes, fotos, audios y estados.</p>
         </div>
       </div>
 
-      <div class="tabs" role="tablist" aria-label="Acceso">
-        <button class="tab-button active" id="loginTab" type="button">Iniciar sesion</button>
-        <button class="tab-button" id="registerTab" type="button">Registrarse</button>
+      <div class="tabs">
+        <button class="tab active" id="loginTab" type="button">Entrar</button>
+        <button class="tab" id="registerTab" type="button">Crear cuenta</button>
       </div>
 
-      <form class="auth-form active" id="loginForm" autocomplete="on">
-        <label>
-          Correo
+      <form class="auth-form active" id="loginForm">
+        <label>Correo
           <input type="email" name="email" autocomplete="email" required>
         </label>
-        <label>
-          Contrasena
+        <label>Contrasena
           <input type="password" name="password" autocomplete="current-password" minlength="6" required>
         </label>
-        <button class="primary-button" type="submit">Entrar</button>
+        <button class="primary" type="submit">Iniciar sesion</button>
       </form>
 
-      <form class="auth-form" id="registerForm" autocomplete="on">
-        <label>
-          Nombre
-          <input type="text" name="name" autocomplete="name" pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+" maxlength="70" required>
+      <form class="auth-form" id="registerForm">
+        <label>Nombre
+          <input type="text" name="name" autocomplete="name" pattern="[A-Za-z ]+" maxlength="70" required>
         </label>
-        <label>
-          Telefono
+        <label>Telefono
           <input type="tel" name="phone" inputmode="numeric" pattern="[0-9]{7,15}" maxlength="15" required>
         </label>
-        <label>
-          Correo
+        <label>Correo
           <input type="email" name="email" autocomplete="email" required>
         </label>
-        <label>
-          Contrasena
+        <label>Contrasena
           <input type="password" name="password" autocomplete="new-password" minlength="6" required>
         </label>
-        <button class="primary-button" type="submit">Crear cuenta</button>
+        <button class="primary" type="submit">Registrarme</button>
       </form>
 
-      <p class="status-text" id="authStatus" aria-live="polite"></p>
+      <p class="notice" id="authStatus" aria-live="polite"></p>
     </section>
 
-    <section class="messenger hidden" id="messenger">
-      <aside class="sidebar">
-        <div class="profile-card">
+    <section class="phone-app hidden" id="messenger">
+      <aside class="left-pane">
+        <header class="me-card">
           <div class="avatar" id="userAvatar">U</div>
-          <div>
+          <div class="me-text">
             <strong id="userName">Usuario</strong>
             <span id="userEmail">correo</span>
           </div>
+          <button class="round-btn" id="themeBtn" type="button" title="Modo oscuro">N</button>
+        </header>
+
+        <div class="quick-actions">
+          <button class="soft-btn" id="generalBtn" type="button">Servidor</button>
+          <button class="soft-btn" id="editAccountBtn" type="button">Cuenta</button>
+          <button class="danger" id="logoutBtn" type="button">Salir</button>
         </div>
 
-        <div class="sidebar-actions">
-          <button class="ghost-button" id="themeBtn" type="button">Modo oscuro</button>
-          <button class="ghost-button" id="editAccountBtn" type="button">Editar cuenta</button>
-          <button class="danger-button" id="deleteAccountBtn" type="button">Borrar cuenta</button>
-          <button class="ghost-button" id="logoutBtn" type="button">Salir</button>
-        </div>
-
-        <div class="search-box">
-          <label>
-            Buscar por nombre
-            <input type="text" id="userSearch" placeholder="Solo letras">
+        <form class="edit-card hidden" id="accountForm">
+          <label>Nombre
+            <input type="text" name="name" pattern="[A-Za-z ]+" maxlength="70" required>
           </label>
-          <div class="user-results" id="userResults"></div>
-        </div>
-
-        <form class="account-form hidden" id="accountForm">
-          <label>
-            Nombre
-            <input type="text" name="name" pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+" maxlength="70" required>
-          </label>
-          <label>
-            Telefono
+          <label>Telefono
             <input type="tel" name="phone" inputmode="numeric" pattern="[0-9]{7,15}" maxlength="15" required>
           </label>
-          <button class="primary-button small" type="submit">Guardar</button>
+          <button class="primary small" type="submit">Guardar</button>
+          <button class="danger small" id="deleteAccountBtn" type="button">Borrar cuenta</button>
         </form>
+
+        <div class="search-panel">
+          <label>Buscar usuarios en la red
+            <input type="text" id="userSearch" placeholder="Escribe un nombre">
+          </label>
+          <div class="results" id="userResults"></div>
+        </div>
+
+        <div class="chat-list" id="chatList"></div>
       </aside>
 
-      <section class="chat-panel">
-        <div class="stories-strip" id="storiesStrip"></div>
+      <section class="right-pane">
+        <div class="status-bar">
+          <form class="status-form" id="statusForm">
+            <input type="text" name="note" maxlength="140" placeholder="Estado o nota">
+            <input class="file-input" id="statusFile" type="file" name="file" accept="image/*,audio/*,video/*">
+            <label class="icon-btn" for="statusFile" title="Foto/audio/video de estado">+</label>
+            <button class="primary small" type="submit">Subir</button>
+          </form>
+          <div class="stories" id="storiesStrip"></div>
+        </div>
 
-        <header class="chat-header">
+        <header class="chat-head">
+          <div class="avatar mini" id="chatAvatar">S</div>
           <div>
             <h2 id="chatTitle">Servidor general</h2>
-            <p id="chatHint">Feed, mensajes directos, camara, audios y notas.</p>
+            <p id="chatHint">Todos los usuarios registrados pueden leer este chat.</p>
           </div>
-          <button class="ghost-button refresh" id="refreshBtn" type="button">Actualizar</button>
+          <button class="soft-btn refresh" id="refreshBtn" type="button">Actualizar</button>
         </header>
 
         <div class="messages" id="messages" aria-live="polite"></div>
 
-        <form class="status-form" id="statusForm">
-          <input type="text" name="note" id="statusNote" maxlength="140" placeholder="Subir estado o nota">
-          <input class="file-input" id="statusFile" type="file" name="file" accept="image/*,video/*,audio/*">
-          <label class="icon-button file-label" for="statusFile" aria-label="Archivo para estado">🖼️</label>
-          <button class="primary-button small" type="submit">Publicar</button>
-        </form>
-
         <form class="composer" id="messageForm">
-          <div class="picker-row hidden" id="emojiPicker"></div>
-          <div class="picker-row hidden" id="stickerPicker"></div>
           <input type="hidden" name="editing_id" id="editingId">
           <input type="hidden" name="recipient_id" id="recipientId">
-          <textarea name="body" id="messageBody" rows="1" maxlength="1200" placeholder="Escribe un mensaje"></textarea>
-          <input class="file-input" id="fileInput" type="file" name="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt,.zip">
-          <select name="expires_in" id="expiresIn" aria-label="Duracion del mensaje">
-            <option value="0">Sin duracion</option>
-            <option value="60">1 minuto</option>
-            <option value="3600">1 hora</option>
-            <option value="86400">1 dia</option>
-          </select>
-          <div class="composer-actions">
-            <button class="icon-button" id="emojiBtn" type="button" aria-label="Emojis">😊</button>
-            <button class="icon-button" id="stickerBtn" type="button" aria-label="Stickers">💟</button>
-            <button class="icon-button" id="cameraBtn" type="button" aria-label="Camara">📷</button>
-            <button class="icon-button" id="audioBtn" type="button" aria-label="Audio">🎙️</button>
-            <label class="icon-button file-label" for="fileInput" aria-label="Archivo">📎</label>
-            <button class="primary-button send-button" type="submit">Enviar</button>
+          <div class="picker hidden" id="emojiPicker"></div>
+          <div class="picker hidden" id="stickerPicker"></div>
+          <div class="compose-line">
+            <button class="icon-btn" id="emojiBtn" type="button" title="Emojis">:)</button>
+            <button class="icon-btn" id="stickerBtn" type="button" title="Stickers">*</button>
+            <textarea name="body" id="messageBody" rows="1" maxlength="1200" placeholder="Mensaje"></textarea>
+            <button class="icon-btn" id="cameraBtn" type="button" title="Camara">Cam</button>
+            <button class="icon-btn" id="audioBtn" type="button" title="Audio">Mic</button>
+            <input class="file-input" id="fileInput" type="file" name="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt,.zip">
+            <label class="icon-btn" for="fileInput" title="Archivo">+</label>
+            <button class="primary send" type="submit">Enviar</button>
           </div>
-          <p class="file-name" id="fileName"></p>
+          <div class="compose-foot">
+            <select name="expires_in" id="expiresIn">
+              <option value="0">No expira</option>
+              <option value="60">1 minuto</option>
+              <option value="3600">1 hora</option>
+              <option value="86400">1 dia</option>
+            </select>
+            <span id="fileName"></span>
+          </div>
         </form>
       </section>
     </section>
 
-    <section class="media-modal hidden" id="cameraModal" aria-label="Camara">
-      <div class="media-box">
+    <section class="media-modal hidden" id="cameraModal">
+      <div class="media-card">
         <video id="cameraPreview" autoplay playsinline muted></video>
         <canvas id="cameraCanvas" class="hidden"></canvas>
-        <div class="composer-actions">
-          <button class="primary-button" id="captureBtn" type="button">Tomar foto</button>
-          <button class="ghost-button" id="closeCameraBtn" type="button">Cerrar</button>
+        <div class="modal-actions">
+          <button class="primary" id="captureBtn" type="button">Tomar foto</button>
+          <button class="soft-btn" id="closeCameraBtn" type="button">Cerrar</button>
         </div>
       </div>
     </section>

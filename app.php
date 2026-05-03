@@ -69,9 +69,11 @@ function migrate(PDO $pdo): void
             phone VARCHAR(15) NOT NULL,
             email VARCHAR(190) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
+            last_seen DATETIME NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    add_column($pdo, 'users', 'last_seen', 'ALTER TABLE users ADD last_seen DATETIME NULL AFTER password_hash');
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS messages (
@@ -177,6 +179,7 @@ function require_user(): array
         fail('La sesion ya no es valida.', 401);
     }
 
+    db()->prepare('UPDATE users SET last_seen = NOW() WHERE id = ?')->execute([$user['id']]);
     return $user;
 }
 
@@ -442,10 +445,40 @@ function search_users(): void
     }
 
     $statement = db()->prepare(
-        'SELECT id, name, email FROM users WHERE id <> ? AND name LIKE ? ORDER BY name ASC LIMIT 12'
+        "SELECT id, name, email,
+                IF(last_seen >= DATE_SUB(NOW(), INTERVAL 2 MINUTE), 1, 0) AS online
+         FROM users
+         WHERE id <> ? AND name LIKE ?
+         ORDER BY online DESC, name ASC
+         LIMIT 20"
     );
     $statement->execute([$user['id'], '%' . $term . '%']);
     json_response(['ok' => true, 'users' => $statement->fetchAll()]);
+}
+
+function list_chats(): void
+{
+    $user = require_user();
+    $statement = db()->prepare(
+        "SELECT u.id, u.name, u.email,
+                IF(u.last_seen >= DATE_SUB(NOW(), INTERVAL 2 MINUTE), 1, 0) AS online,
+                DATE_FORMAT(MAX(m.created_at), '%d/%m %H:%i') AS last_time,
+                SUBSTRING_INDEX(
+                    GROUP_CONCAT(COALESCE(NULLIF(m.body, ''), m.file_name, 'Archivo') ORDER BY m.created_at DESC SEPARATOR '|||'),
+                    '|||',
+                    1
+                ) AS last_message
+         FROM users u
+         JOIN messages m
+           ON ((m.user_id = ? AND m.recipient_id = u.id) OR (m.user_id = u.id AND m.recipient_id = ?))
+         WHERE u.id <> ?
+           AND (m.expires_at IS NULL OR m.expires_at > NOW())
+         GROUP BY u.id, u.name, u.email, u.last_seen
+         ORDER BY MAX(m.created_at) DESC
+         LIMIT 40"
+    );
+    $statement->execute([$user['id'], $user['id'], $user['id']]);
+    json_response(['ok' => true, 'chats' => $statement->fetchAll()]);
 }
 
 function list_statuses(): void
@@ -550,6 +583,9 @@ switch ($action) {
         break;
     case 'search_users':
         search_users();
+        break;
+    case 'chats':
+        list_chats();
         break;
     case 'statuses':
         list_statuses();

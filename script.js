@@ -1,8 +1,8 @@
 const API = "app.php";
-const nameRegex = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$/u;
+const nameRegex = /^[A-Za-z ]+$/;
 const phoneRegex = /^[0-9]+$/;
-const emojis = ["😀", "😂", "😍", "😎", "🥰", "😇", "👍", "🙏", "✨", "💬", "❤️", "🌟"];
-const stickers = ["💟", "🌸", "🦋", "🍓", "☁️", "🌈", "⭐", "🎀", "🍰", "💌"];
+const emojis = ["\u{1F600}", "\u{1F602}", "\u{1F60D}", "\u{1F60E}", "\u{1F970}", "\u{1F44D}", "\u{2728}", "\u{2764}\u{FE0F}", "\u{1F64F}", "\u{1F525}"];
+const stickers = ["\u{1F338}", "\u{1F98B}", "\u{1F353}", "\u{2601}\u{FE0F}", "\u{1F308}", "\u{2B50}", "\u{1F380}", "\u{1F370}", "\u{1F48C}", "\u{1F49F}"];
 
 let currentUser = null;
 let currentChat = { id: 0, name: "Servidor general" };
@@ -35,75 +35,81 @@ const stickerPicker = $("#stickerPicker");
 const accountForm = $("#accountForm");
 const userSearch = $("#userSearch");
 const userResults = $("#userResults");
+const chatList = $("#chatList");
 const storiesStrip = $("#storiesStrip");
 const statusForm = $("#statusForm");
 const cameraModal = $("#cameraModal");
 const cameraPreview = $("#cameraPreview");
 const cameraCanvas = $("#cameraCanvas");
 
-function setStatus(text, isError = false) {
+function setNotice(text, isError = false) {
   authStatus.textContent = text;
-  authStatus.style.color = isError ? "#d6455d" : "#736d86";
+  authStatus.style.color = isError ? "#d9435f" : "";
 }
 
-function api(action, data = null) {
+function readResponse(response) {
+  return response.json()
+    .catch(() => ({ ok: false, error: "El servidor no respondio JSON valido." }))
+    .then((payload) => {
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "No se pudo completar.");
+      return payload;
+    });
+}
+
+function api(action, data = {}) {
   const options = data instanceof FormData
     ? { method: "POST", body: data }
     : {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data || {})
+        body: JSON.stringify(data)
       };
-
   return fetch(`${API}?action=${encodeURIComponent(action)}`, options).then(readResponse);
 }
 
 function apiGet(action, params = {}) {
   const query = new URLSearchParams({ action, ...params });
-  return fetch(`${API}?${query.toString()}`).then(readResponse);
+  return fetch(`${API}?${query}`).then(readResponse);
 }
 
-async function readResponse(response) {
-  const payload = await response.json().catch(() => ({ ok: false, error: "Respuesta invalida del servidor." }));
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || "No se pudo completar la accion.");
-  }
-  return payload;
+function cleanLetters(input) {
+  input.value = input.value.replace(/[^A-Za-z ]/g, "");
 }
 
-function cleanLettersInput(input) {
-  input.value = input.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]/gu, "");
-}
-
-function cleanNumbersInput(input) {
+function cleanNumbers(input) {
   input.value = input.value.replace(/[^0-9]/g, "");
 }
 
-function validateNamePhone(form) {
+function validateProfile(form) {
   const name = form.elements.name?.value.trim();
   const phone = form.elements.phone?.value.trim();
-
-  if (name !== undefined && !nameRegex.test(name)) {
-    throw new Error("El nombre solo puede llevar letras y espacios.");
-  }
-  if (phone !== undefined && !phoneRegex.test(phone)) {
-    throw new Error("El telefono solo puede llevar numeros.");
-  }
+  if (name !== undefined && !nameRegex.test(name)) throw new Error("El nombre solo acepta letras.");
+  if (phone !== undefined && !phoneRegex.test(phone)) throw new Error("El telefono solo acepta numeros.");
 }
 
-function showLoginMode(isLogin) {
-  loginTab.classList.toggle("active", isLogin);
-  registerTab.classList.toggle("active", !isLogin);
-  loginForm.classList.toggle("active", isLogin);
-  registerForm.classList.toggle("active", !isLogin);
-  setStatus("");
+function esc(value) {
+  const div = document.createElement("div");
+  div.textContent = value || "";
+  return div.innerHTML;
+}
+
+function initials(name) {
+  return (name || "U").trim().slice(0, 2).toUpperCase();
+}
+
+function showAuthTab(login) {
+  loginTab.classList.toggle("active", login);
+  registerTab.classList.toggle("active", !login);
+  loginForm.classList.toggle("active", login);
+  registerForm.classList.toggle("active", !login);
+  setNotice("");
 }
 
 function setUser(user) {
   currentUser = user;
   $("#userName").textContent = user.name;
   $("#userEmail").textContent = user.email;
-  $("#userAvatar").textContent = user.name.charAt(0).toUpperCase();
+  $("#userAvatar").textContent = initials(user.name);
   accountForm.elements.name.value = user.name;
   accountForm.elements.phone.value = user.phone || "";
 }
@@ -113,94 +119,101 @@ function enterApp(user) {
   authPanel.classList.add("hidden");
   messenger.classList.remove("hidden");
   selectChat(0, "Servidor general");
-  loadStatuses();
+  refreshAll();
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    loadMessages();
-    loadStatuses();
-  }, 4500);
+  pollTimer = setInterval(refreshAll, 4000);
 }
 
 function leaveApp() {
   currentUser = null;
+  clearInterval(pollTimer);
   messenger.classList.add("hidden");
   authPanel.classList.remove("hidden");
-  clearInterval(pollTimer);
   messagesBox.innerHTML = "";
+  chatList.innerHTML = "";
   storiesStrip.innerHTML = "";
 }
 
-function renderPicker(container, items, handler) {
-  container.innerHTML = "";
-  items.forEach((item) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "picker-item";
-    button.textContent = item;
-    button.addEventListener("click", () => handler(item));
-    container.appendChild(button);
+function selectChat(id, name) {
+  currentChat = { id: Number(id) || 0, name };
+  recipientId.value = currentChat.id || "";
+  $("#chatTitle").textContent = currentChat.id ? name : "Servidor general";
+  $("#chatAvatar").textContent = currentChat.id ? initials(name) : "S";
+  $("#chatHint").textContent = currentChat.id
+    ? "Chat privado. Puedes enviar fotos, audios y archivos."
+    : "Chat del servidor. Todos los usuarios registrados lo ven.";
+  resetComposer();
+  loadMessages();
+  markActiveChat();
+}
+
+function markActiveChat() {
+  document.querySelectorAll(".contact").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.id) === currentChat.id);
   });
 }
 
-function escapeText(value) {
-  const div = document.createElement("div");
-  div.textContent = value || "";
-  return div.innerHTML;
+function renderContact(user, preview = "") {
+  const online = Number(user.online) === 1 ? "En linea" : "Usuario";
+  return `<button class="contact" type="button" data-id="${user.id}" data-name="${esc(user.name)}">
+    <span class="avatar">${esc(initials(user.name))}</span>
+    <span>
+      <strong>${esc(user.name)}</strong>
+      <span>${esc(preview || user.last_message || online)}</span>
+    </span>
+  </button>`;
+}
+
+function renderChatList(chats) {
+  const general = `<button class="contact" type="button" data-id="0" data-name="Servidor general">
+    <span class="avatar">S</span>
+    <span><strong>Servidor general</strong><span>Chat publico de la red</span></span>
+  </button>`;
+  chatList.innerHTML = general + chats.map((chat) => renderContact(chat)).join("");
+  markActiveChat();
 }
 
 function renderAttachment(message) {
   if (!message.file_name) return "";
-
   const src = `${API}?action=file&id=${encodeURIComponent(message.id)}`;
-  const name = escapeText(message.file_name);
+  const name = esc(message.file_name);
   const type = message.file_type || "";
-
-  if (type.startsWith("image/")) {
-    return `<div class="attachment"><img src="${src}" alt="${name}"></div>`;
-  }
-  if (type.startsWith("audio/")) {
-    return `<div class="attachment"><audio controls src="${src}"></audio></div>`;
-  }
-  if (type.startsWith("video/")) {
-    return `<div class="attachment"><video controls src="${src}"></video></div>`;
-  }
-  return `<div class="attachment"><a class="download-link" href="${src}" download="${name}">Descargar ${name}</a></div>`;
+  if (type.startsWith("image/")) return `<div class="attachment"><img src="${src}" alt="${name}"></div>`;
+  if (type.startsWith("audio/")) return `<div class="attachment"><audio controls src="${src}"></audio></div>`;
+  if (type.startsWith("video/")) return `<div class="attachment"><video controls src="${src}"></video></div>`;
+  return `<div class="attachment"><a class="download" href="${src}" download="${name}">Descargar ${name}</a></div>`;
 }
 
 function renderMessages(messages) {
   if (!messages.length) {
-    messagesBox.innerHTML = `<div class="empty-state">Aun no hay mensajes.</div>`;
+    messagesBox.innerHTML = `<div class="empty">No hay mensajes todavia.</div>`;
     return;
   }
 
   messagesBox.innerHTML = messages.map((message) => {
-    const mine = currentUser && Number(message.user_id) === Number(currentUser.id);
-    const expires = message.expires_at ? `<span>Expira ${escapeText(message.expires_at)}</span>` : "";
+    const mine = Number(message.user_id) === Number(currentUser.id);
     const tools = mine
       ? `<div class="message-tools">
-          <button class="tool-button edit" data-id="${message.id}" type="button">Editar</button>
-          <button class="tool-button delete" data-id="${message.id}" type="button">Borrar</button>
+          <button class="tool edit" data-id="${message.id}" type="button">Editar</button>
+          <button class="tool delete" data-id="${message.id}" type="button">Borrar</button>
         </div>`
       : "";
-    return `<article class="message ${mine ? "mine" : ""}">
-      <div class="message-meta">
-        <span>${escapeText(message.user_name)}</span>
-        <time>${escapeText(message.created_at)}</time>
-      </div>
-      <div class="message-body">${escapeText(message.body)}</div>
-      ${message.sticker ? `<span class="sticker">${escapeText(message.sticker)}</span>` : ""}
+    const expires = message.expires_at ? `<span>Expira ${esc(message.expires_at)}</span>` : "";
+    return `<article class="bubble ${mine ? "mine" : ""}">
+      <div class="meta"><span>${esc(message.user_name)}</span><time>${esc(message.created_at)}</time></div>
+      <div class="body-text">${esc(message.body)}</div>
+      ${message.sticker ? `<span class="sticker">${esc(message.sticker)}</span>` : ""}
       ${renderAttachment(message)}
       ${expires}
       ${tools}
     </article>`;
   }).join("");
-
   messagesBox.scrollTop = messagesBox.scrollHeight;
 }
 
 function renderStatuses(statuses) {
   if (!statuses.length) {
-    storiesStrip.innerHTML = `<div class="story-card"><strong>Feed</strong><span>Sin estados todavia</span></div>`;
+    storiesStrip.innerHTML = `<article class="story"><strong>Estados</strong><span>Sin estados aun</span></article>`;
     return;
   }
 
@@ -211,42 +224,41 @@ function renderStatuses(statuses) {
     if (type.startsWith("image/")) media = `<img class="story-media" src="${src}" alt="">`;
     if (type.startsWith("audio/")) media = `<audio class="story-audio" controls src="${src}"></audio>`;
     if (type.startsWith("video/")) media = `<video class="story-media" controls src="${src}"></video>`;
-    return `<article class="story-card">
-      <strong>${escapeText(status.user_name)}</strong>
-      <span>${escapeText(status.note || "Estado multimedia")}</span>
-      <span>${escapeText(status.created_at)}</span>
+    return `<article class="story">
+      <strong>${esc(status.user_name)}</strong>
+      <span>${esc(status.note || "Estado multimedia")}</span>
       ${media}
     </article>`;
   }).join("");
 }
 
-async function loadMessages() {
-  if (!currentUser) return;
-  try {
-    const payload = await apiGet("messages", { recipient_id: currentChat.id || "" });
-    renderMessages(payload.messages);
-  } catch (error) {
-    $("#chatHint").textContent = error.message;
-  }
+function loadMessages() {
+  if (!currentUser) return Promise.resolve();
+  return apiGet("messages", { recipient_id: currentChat.id || "" })
+    .then((payload) => renderMessages(payload.messages))
+    .catch((error) => { $("#chatHint").textContent = error.message; });
 }
 
-async function loadStatuses() {
-  if (!currentUser) return;
-  try {
-    const payload = await apiGet("statuses");
-    renderStatuses(payload.statuses);
-  } catch (error) {
-    storiesStrip.innerHTML = `<div class="story-card"><strong>Feed</strong><span>${escapeText(error.message)}</span></div>`;
-  }
+function loadChats() {
+  if (!currentUser) return Promise.resolve();
+  return apiGet("chats")
+    .then((payload) => renderChatList(payload.chats))
+    .catch(() => renderChatList([]));
 }
 
-function selectChat(id, name) {
-  currentChat = { id: Number(id) || 0, name };
-  recipientId.value = currentChat.id || "";
-  $("#chatTitle").textContent = currentChat.id ? `Chat con ${name}` : "Servidor general";
-  $("#chatHint").textContent = currentChat.id ? "Mensaje directo privado." : "Feed del servidor general.";
-  resetComposer();
+function loadStatuses() {
+  if (!currentUser) return Promise.resolve();
+  return apiGet("statuses")
+    .then((payload) => renderStatuses(payload.statuses))
+    .catch((error) => {
+      storiesStrip.innerHTML = `<article class="story"><strong>Error</strong><span>${esc(error.message)}</span></article>`;
+    });
+}
+
+function refreshAll() {
   loadMessages();
+  loadChats();
+  loadStatuses();
 }
 
 function resetComposer() {
@@ -257,100 +269,129 @@ function resetComposer() {
   recipientId.value = currentChat.id || "";
   expiresIn.value = "0";
   fileName.textContent = "";
-  messageForm.querySelector(".send-button").textContent = "Enviar";
+  messageForm.querySelector(".send").textContent = "Enviar";
 }
 
-function addFileToForm(formData) {
-  if (attachedFile) {
-    formData.set("file", attachedFile, attachedFile.name);
-  }
+function putAttachedFile(formData) {
+  if (attachedFile) formData.set("file", attachedFile, attachedFile.name);
+}
+
+function buildPicker(container, items, onPick) {
+  container.innerHTML = "";
+  items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item;
+    button.addEventListener("click", () => onPick(item));
+    container.appendChild(button);
+  });
 }
 
 document.addEventListener("input", (event) => {
-  if (event.target.matches('input[name="name"], #userSearch')) cleanLettersInput(event.target);
-  if (event.target.matches('input[name="phone"]')) cleanNumbersInput(event.target);
+  if (event.target.matches('input[name="name"], #userSearch')) cleanLetters(event.target);
+  if (event.target.matches('input[name="phone"]')) cleanNumbers(event.target);
 });
 
-loginTab.addEventListener("click", () => showLoginMode(true));
-registerTab.addEventListener("click", () => showLoginMode(false));
+loginTab.addEventListener("click", () => showAuthTab(true));
+registerTab.addEventListener("click", () => showAuthTab(false));
 
-loginForm.addEventListener("submit", async (event) => {
+loginForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  setStatus("Entrando...");
-  try {
-    const payload = await api("login", Object.fromEntries(new FormData(loginForm)));
-    setStatus("");
-    enterApp(payload.user);
-  } catch (error) {
-    setStatus(error.message, true);
-  }
+  setNotice("Entrando...");
+  api("login", Object.fromEntries(new FormData(loginForm)))
+    .then((payload) => {
+      setNotice("");
+      enterApp(payload.user);
+    })
+    .catch((error) => setNotice(error.message, true));
 });
 
-registerForm.addEventListener("submit", async (event) => {
+registerForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  setStatus("Creando cuenta...");
+  setNotice("Creando cuenta...");
   try {
-    validateNamePhone(registerForm);
-    const payload = await api("register", Object.fromEntries(new FormData(registerForm)));
-    registerForm.reset();
-    setStatus("");
-    enterApp(payload.user);
+    validateProfile(registerForm);
   } catch (error) {
-    setStatus(error.message, true);
+    setNotice(error.message, true);
+    return;
   }
+  api("register", Object.fromEntries(new FormData(registerForm)))
+    .then((payload) => {
+      registerForm.reset();
+      setNotice("");
+      enterApp(payload.user);
+    })
+    .catch((error) => setNotice(error.message, true));
 });
 
-messageForm.addEventListener("submit", async (event) => {
+messageForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(messageForm);
   formData.append("sticker", selectedSticker);
-  addFileToForm(formData);
+  putAttachedFile(formData);
 
-  if (!formData.get("body").trim() && !selectedSticker && !fileInput.files.length && !attachedFile && !editingId.value) {
-    return;
-  }
+  if (!formData.get("body").trim() && !selectedSticker && !fileInput.files.length && !attachedFile && !editingId.value) return;
 
-  try {
-    await api(editingId.value ? "update_message" : "create_message", formData);
-    resetComposer();
-    await loadMessages();
-  } catch (error) {
-    $("#chatHint").textContent = error.message;
-  }
+  api(editingId.value ? "update_message" : "create_message", formData)
+    .then(() => {
+      resetComposer();
+      refreshAll();
+    })
+    .catch((error) => { $("#chatHint").textContent = error.message; });
 });
 
-statusForm.addEventListener("submit", async (event) => {
+statusForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(statusForm);
-  try {
-    await api("create_status", formData);
-    statusForm.reset();
-    await loadStatuses();
-  } catch (error) {
-    $("#chatHint").textContent = error.message;
+  api("create_status", formData)
+    .then(() => {
+      statusForm.reset();
+      loadStatuses();
+    })
+    .catch((error) => { $("#chatHint").textContent = error.message; });
+});
+
+messagesBox.addEventListener("click", (event) => {
+  const edit = event.target.closest(".edit");
+  const del = event.target.closest(".delete");
+  if (edit) {
+    const bubble = edit.closest(".bubble");
+    editingId.value = edit.dataset.id;
+    messageBody.value = bubble.querySelector(".body-text").textContent;
+    messageBody.focus();
+    messageForm.querySelector(".send").textContent = "Guardar";
+  }
+  if (del && confirm("Quieres borrar este mensaje?")) {
+    api("delete_message", { id: del.dataset.id })
+      .then(refreshAll)
+      .catch((error) => { $("#chatHint").textContent = error.message; });
   }
 });
 
-messagesBox.addEventListener("click", async (event) => {
-  const editButton = event.target.closest(".edit");
-  const deleteButton = event.target.closest(".delete");
+chatList.addEventListener("click", (event) => {
+  const contact = event.target.closest(".contact");
+  if (contact) selectChat(contact.dataset.id, contact.dataset.name);
+});
 
-  if (editButton) {
-    const message = editButton.closest(".message");
-    editingId.value = editButton.dataset.id;
-    messageBody.value = message.querySelector(".message-body").textContent;
-    messageBody.focus();
-    messageForm.querySelector(".send-button").textContent = "Guardar";
-  }
+userResults.addEventListener("click", (event) => {
+  const contact = event.target.closest(".contact");
+  if (contact) selectChat(contact.dataset.id, contact.dataset.name);
+});
 
-  if (deleteButton && confirm("Quieres borrar este mensaje?")) {
-    try {
-      await api("delete_message", { id: deleteButton.dataset.id });
-      await loadMessages();
-    } catch (error) {
-      $("#chatHint").textContent = error.message;
-    }
+userSearch.addEventListener("input", () => {
+  const q = userSearch.value.trim();
+  if (!q) {
+    userResults.innerHTML = "";
+    return;
   }
+  apiGet("search_users", { q })
+    .then((payload) => {
+      userResults.innerHTML = payload.users.map((user) => renderContact(user, Number(user.online) === 1 ? "En linea" : "Disponible")).join("")
+        || `<div class="contact"><span class="avatar">?</span><span><strong>Sin resultados</strong><span>Prueba otro nombre</span></span></div>`;
+    })
+    .catch((error) => {
+      userResults.innerHTML = `<div class="contact"><span class="avatar">!</span><span><strong>Error</strong><span>${esc(error.message)}</span></span></div>`;
+    });
 });
 
 document.addEventListener("play", (event) => {
@@ -359,28 +400,6 @@ document.addEventListener("play", (event) => {
     if (media !== event.target) media.pause();
   });
 }, true);
-
-userSearch.addEventListener("input", async () => {
-  const q = userSearch.value.trim();
-  if (!q) {
-    userResults.innerHTML = `<button class="user-pill" type="button" data-id="0" data-name="Servidor general">Servidor general</button>`;
-    return;
-  }
-
-  try {
-    const payload = await apiGet("search_users", { q });
-    userResults.innerHTML = payload.users.map((user) => (
-      `<button class="user-pill" type="button" data-id="${user.id}" data-name="${escapeText(user.name)}">${escapeText(user.name)}</button>`
-    )).join("") || `<div class="user-pill">Sin resultados</div>`;
-  } catch (error) {
-    userResults.innerHTML = `<div class="user-pill">${escapeText(error.message)}</div>`;
-  }
-});
-
-userResults.addEventListener("click", (event) => {
-  const button = event.target.closest(".user-pill[data-id]");
-  if (button) selectChat(button.dataset.id, button.dataset.name);
-});
 
 $("#emojiBtn").addEventListener("click", () => {
   emojiPicker.classList.toggle("hidden");
@@ -397,15 +416,25 @@ fileInput.addEventListener("change", () => {
   fileName.textContent = fileInput.files[0] ? fileInput.files[0].name : "";
 });
 
-$("#cameraBtn").addEventListener("click", async () => {
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    cameraPreview.srcObject = cameraStream;
-    cameraModal.classList.remove("hidden");
-  } catch (error) {
-    $("#chatHint").textContent = "No se pudo abrir la camara.";
+$("#cameraBtn").addEventListener("click", () => {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    $("#chatHint").textContent = "Tu navegador no permite abrir camara aqui.";
+    return;
   }
+  navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    .then((stream) => {
+      cameraStream = stream;
+      cameraPreview.srcObject = stream;
+      cameraModal.classList.remove("hidden");
+    })
+    .catch(() => { $("#chatHint").textContent = "No se pudo abrir la camara."; });
 });
+
+function closeCamera() {
+  if (cameraStream) cameraStream.getTracks().forEach((track) => track.stop());
+  cameraStream = null;
+  cameraModal.classList.add("hidden");
+}
 
 $("#captureBtn").addEventListener("click", () => {
   const width = cameraPreview.videoWidth || 640;
@@ -414,107 +443,99 @@ $("#captureBtn").addEventListener("click", () => {
   cameraCanvas.height = height;
   cameraCanvas.getContext("2d").drawImage(cameraPreview, 0, 0, width, height);
   cameraCanvas.toBlob((blob) => {
-    attachedFile = new File([blob], `camara-${Date.now()}.jpg`, { type: "image/jpeg" });
+    attachedFile = new File([blob], `foto-${Date.now()}.jpg`, { type: "image/jpeg" });
     fileInput.value = "";
     fileName.textContent = attachedFile.name;
     closeCamera();
   }, "image/jpeg", 0.9);
 });
 
-function closeCamera() {
-  if (cameraStream) {
-    cameraStream.getTracks().forEach((track) => track.stop());
-    cameraStream = null;
-  }
-  cameraModal.classList.add("hidden");
-}
-
 $("#closeCameraBtn").addEventListener("click", closeCamera);
 
-$("#audioBtn").addEventListener("click", async () => {
+$("#audioBtn").addEventListener("click", () => {
   if (audioRecorder && audioRecorder.state === "recording") {
     audioRecorder.stop();
     return;
   }
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioChunks = [];
-    audioRecorder = new MediaRecorder(stream);
-    audioRecorder.addEventListener("dataavailable", (event) => audioChunks.push(event.data));
-    audioRecorder.addEventListener("stop", () => {
-      stream.getTracks().forEach((track) => track.stop());
-      attachedFile = new File(audioChunks, `audio-${Date.now()}.webm`, { type: "audio/webm" });
-      fileInput.value = "";
-      fileName.textContent = attachedFile.name;
-      $("#audioBtn").classList.remove("recording");
-      $("#audioBtn").textContent = "🎙️";
-    });
-    audioRecorder.start();
-    $("#audioBtn").classList.add("recording");
-    $("#audioBtn").textContent = "■";
-  } catch (error) {
-    $("#chatHint").textContent = "No se pudo abrir el microfono.";
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    $("#chatHint").textContent = "Tu navegador no permite grabar audio aqui.";
+    return;
   }
+
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((stream) => {
+      audioChunks = [];
+      audioRecorder = new MediaRecorder(stream);
+      audioRecorder.addEventListener("dataavailable", (event) => audioChunks.push(event.data));
+      audioRecorder.addEventListener("stop", () => {
+        stream.getTracks().forEach((track) => track.stop());
+        attachedFile = new File(audioChunks, `audio-${Date.now()}.webm`, { type: "audio/webm" });
+        fileInput.value = "";
+        fileName.textContent = attachedFile.name;
+        $("#audioBtn").classList.remove("recording");
+        $("#audioBtn").textContent = "Mic";
+      });
+      audioRecorder.start();
+      $("#audioBtn").classList.add("recording");
+      $("#audioBtn").textContent = "Stop";
+    })
+    .catch(() => { $("#chatHint").textContent = "No se pudo abrir el microfono."; });
 });
 
-$("#refreshBtn").addEventListener("click", () => {
-  loadMessages();
-  loadStatuses();
-});
+$("#refreshBtn").addEventListener("click", refreshAll);
+$("#generalBtn").addEventListener("click", () => selectChat(0, "Servidor general"));
 
 $("#themeBtn").addEventListener("click", () => {
   document.body.classList.toggle("dark");
-  localStorage.setItem("pastelTheme", document.body.classList.contains("dark") ? "dark" : "light");
+  localStorage.setItem("pastelchat-theme", document.body.classList.contains("dark") ? "dark" : "light");
 });
 
-$("#logoutBtn").addEventListener("click", async () => {
-  await api("logout").catch(() => null);
-  leaveApp();
-});
+$("#editAccountBtn").addEventListener("click", () => accountForm.classList.toggle("hidden"));
 
-$("#editAccountBtn").addEventListener("click", () => {
-  accountForm.classList.toggle("hidden");
-});
-
-accountForm.addEventListener("submit", async (event) => {
+accountForm.addEventListener("submit", (event) => {
   event.preventDefault();
   try {
-    validateNamePhone(accountForm);
-    const payload = await api("update_account", Object.fromEntries(new FormData(accountForm)));
-    setUser(payload.user);
-    accountForm.classList.add("hidden");
+    validateProfile(accountForm);
   } catch (error) {
     $("#chatHint").textContent = error.message;
+    return;
   }
+  api("update_account", Object.fromEntries(new FormData(accountForm)))
+    .then((payload) => {
+      setUser(payload.user);
+      accountForm.classList.add("hidden");
+    })
+    .catch((error) => { $("#chatHint").textContent = error.message; });
 });
 
-$("#deleteAccountBtn").addEventListener("click", async () => {
-  if (!confirm("Quieres borrar tu cuenta y tus mensajes?")) return;
-  try {
-    await api("delete_account");
-    leaveApp();
-    setStatus("Cuenta borrada.");
-  } catch (error) {
-    $("#chatHint").textContent = error.message;
-  }
+$("#deleteAccountBtn").addEventListener("click", () => {
+  if (!confirm("Quieres borrar tu cuenta, mensajes y estados?")) return;
+  api("delete_account")
+    .then(() => {
+      leaveApp();
+      setNotice("Cuenta borrada.");
+    })
+    .catch((error) => { $("#chatHint").textContent = error.message; });
 });
 
-renderPicker(emojiPicker, emojis, (emoji) => {
+$("#logoutBtn").addEventListener("click", () => {
+  api("logout").catch(() => null).then(leaveApp);
+});
+
+buildPicker(emojiPicker, emojis, (emoji) => {
   messageBody.value += emoji;
   messageBody.focus();
 });
 
-renderPicker(stickerPicker, stickers, (sticker) => {
+buildPicker(stickerPicker, stickers, (sticker) => {
   selectedSticker = sticker;
   stickerPicker.classList.add("hidden");
 });
 
-if (localStorage.getItem("pastelTheme") === "dark") {
+if (localStorage.getItem("pastelchat-theme") === "dark") {
   document.body.classList.add("dark");
 }
-
-userResults.innerHTML = `<button class="user-pill" type="button" data-id="0" data-name="Servidor general">Servidor general</button>`;
 
 api("me")
   .then((payload) => {

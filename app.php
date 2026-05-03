@@ -82,12 +82,58 @@ function migrate(PDO $pdo): void
             file_name VARCHAR(255) NULL,
             file_type VARCHAR(120) NULL,
             file_data LONGBLOB NULL,
+            recipient_id INT UNSIGNED NULL,
+            expires_at DATETIME NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT NULL,
             INDEX idx_messages_created (created_at),
+            INDEX idx_messages_recipient (recipient_id),
             CONSTRAINT fk_messages_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+
+    add_column($pdo, 'messages', 'recipient_id', 'ALTER TABLE messages ADD recipient_id INT UNSIGNED NULL AFTER user_id');
+    add_column($pdo, 'messages', 'expires_at', 'ALTER TABLE messages ADD expires_at DATETIME NULL AFTER file_data');
+    add_index($pdo, 'messages', 'idx_messages_recipient', 'ALTER TABLE messages ADD INDEX idx_messages_recipient (recipient_id)');
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS statuses (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id INT UNSIGNED NOT NULL,
+            note VARCHAR(140) NULL,
+            file_name VARCHAR(255) NULL,
+            file_type VARCHAR(120) NULL,
+            file_data LONGBLOB NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            INDEX idx_statuses_expires (expires_at),
+            CONSTRAINT fk_statuses_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
+function add_column(PDO $pdo, string $table, string $column, string $sql): void
+{
+    $statement = $pdo->prepare(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?"
+    );
+    $statement->execute([DB_NAME, $table, $column]);
+    if ((int) $statement->fetchColumn() === 0) {
+        $pdo->exec($sql);
+    }
+}
+
+function add_index(PDO $pdo, string $table, string $index, string $sql): void
+{
+    $statement = $pdo->prepare(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ?"
+    );
+    $statement->execute([DB_NAME, $table, $index]);
+    if ((int) $statement->fetchColumn() === 0) {
+        $pdo->exec($sql);
+    }
 }
 
 function input(): array
@@ -144,6 +190,24 @@ function public_user(array $user): array
     ];
 }
 
+function validate_recipient(int $recipientId, int $senderId): ?int
+{
+    if ($recipientId <= 0) {
+        return null;
+    }
+    if ($recipientId === $senderId) {
+        fail('No puedes enviarte un mensaje directo a tu misma cuenta.');
+    }
+
+    $statement = db()->prepare('SELECT id FROM users WHERE id = ?');
+    $statement->execute([$recipientId]);
+    if (!$statement->fetch()) {
+        fail('No se encontro el usuario destino.');
+    }
+
+    return $recipientId;
+}
+
 function register_user(): void
 {
     $data = input();
@@ -192,13 +256,35 @@ function login_user(): void
 
 function list_messages(): void
 {
-    require_user();
+    $user = require_user();
+    $recipientId = (int) ($_GET['recipient_id'] ?? 0);
+
+    if ($recipientId > 0) {
+        $statement = db()->prepare(
+            "SELECT messages.id, messages.user_id, messages.recipient_id, messages.body, messages.sticker,
+                    messages.file_name, messages.file_type, users.name AS user_name,
+                    DATE_FORMAT(messages.created_at, '%d/%m/%Y %H:%i') AS created_at,
+                    IF(messages.expires_at IS NULL, '', DATE_FORMAT(messages.expires_at, '%d/%m/%Y %H:%i')) AS expires_at
+             FROM messages
+             JOIN users ON users.id = messages.user_id
+             WHERE ((messages.user_id = ? AND messages.recipient_id = ?) OR (messages.user_id = ? AND messages.recipient_id = ?))
+               AND (messages.expires_at IS NULL OR messages.expires_at > NOW())
+             ORDER BY messages.created_at ASC, messages.id ASC
+             LIMIT 200"
+        );
+        $statement->execute([$user['id'], $recipientId, $recipientId, $user['id']]);
+        json_response(['ok' => true, 'messages' => $statement->fetchAll()]);
+    }
+
     $statement = db()->query(
         "SELECT messages.id, messages.user_id, messages.body, messages.sticker, messages.file_name,
                 messages.file_type, users.name AS user_name,
-                DATE_FORMAT(messages.created_at, '%d/%m/%Y %H:%i') AS created_at
+                DATE_FORMAT(messages.created_at, '%d/%m/%Y %H:%i') AS created_at,
+                IF(messages.expires_at IS NULL, '', DATE_FORMAT(messages.expires_at, '%d/%m/%Y %H:%i')) AS expires_at
          FROM messages
          JOIN users ON users.id = messages.user_id
+         WHERE messages.recipient_id IS NULL
+           AND (messages.expires_at IS NULL OR messages.expires_at > NOW())
          ORDER BY messages.created_at ASC, messages.id ASC
          LIMIT 200"
     );
@@ -211,6 +297,10 @@ function create_message(): void
     $user = require_user();
     $body = clean_text($_POST['body'] ?? '');
     $sticker = clean_text($_POST['sticker'] ?? '');
+    $recipientId = (int) ($_POST['recipient_id'] ?? 0);
+    $recipientId = validate_recipient($recipientId, (int) $user['id']);
+    $expiresIn = (int) ($_POST['expires_in'] ?? 0);
+    $expiresAt = $expiresIn > 0 ? date('Y-m-d H:i:s', time() + min($expiresIn, 604800)) : null;
     $file = normalize_file();
 
     if ($body === '' && $sticker === '' && !$file) {
@@ -218,15 +308,17 @@ function create_message(): void
     }
 
     $statement = db()->prepare(
-        'INSERT INTO messages (user_id, body, sticker, file_name, file_type, file_data) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO messages (user_id, recipient_id, body, sticker, file_name, file_type, file_data, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $statement->execute([
         $user['id'],
+        $recipientId,
         $body,
         $sticker ?: null,
         $file['name'] ?? null,
         $file['type'] ?? null,
         $file['data'] ?? null,
+        $expiresAt,
     ]);
 
     json_response(['ok' => true]);
@@ -238,6 +330,8 @@ function update_message(): void
     $id = (int) ($_POST['editing_id'] ?? 0);
     $body = clean_text($_POST['body'] ?? '');
     $sticker = clean_text($_POST['sticker'] ?? '');
+    $expiresIn = (int) ($_POST['expires_in'] ?? 0);
+    $expiresAt = $expiresIn > 0 ? date('Y-m-d H:i:s', time() + min($expiresIn, 604800)) : null;
     $file = normalize_file();
 
     if ($id <= 0) {
@@ -246,12 +340,12 @@ function update_message(): void
 
     if ($file) {
         $statement = db()->prepare(
-            'UPDATE messages SET body = ?, sticker = ?, file_name = ?, file_type = ?, file_data = ?, updated_at = NOW() WHERE id = ? AND user_id = ?'
+            'UPDATE messages SET body = ?, sticker = ?, file_name = ?, file_type = ?, file_data = ?, expires_at = ?, updated_at = NOW() WHERE id = ? AND user_id = ?'
         );
-        $statement->execute([$body, $sticker ?: null, $file['name'], $file['type'], $file['data'], $id, $user['id']]);
+        $statement->execute([$body, $sticker ?: null, $file['name'], $file['type'], $file['data'], $expiresAt, $id, $user['id']]);
     } else {
-        $statement = db()->prepare('UPDATE messages SET body = ?, sticker = ?, updated_at = NOW() WHERE id = ? AND user_id = ?');
-        $statement->execute([$body, $sticker ?: null, $id, $user['id']]);
+        $statement = db()->prepare('UPDATE messages SET body = ?, sticker = ?, expires_at = ?, updated_at = NOW() WHERE id = ? AND user_id = ?');
+        $statement->execute([$body, $sticker ?: null, $expiresAt, $id, $user['id']]);
     }
 
     if ($statement->rowCount() === 0) {
@@ -298,9 +392,32 @@ function normalize_file(): ?array
 
 function send_file(): void
 {
+    $user = require_user();
+    $id = (int) ($_GET['id'] ?? 0);
+    $statement = db()->prepare(
+        'SELECT file_name, file_type, file_data FROM messages
+         WHERE id = ? AND file_data IS NOT NULL
+           AND (recipient_id IS NULL OR user_id = ? OR recipient_id = ?)'
+    );
+    $statement->execute([$id, $user['id'], $user['id']]);
+    $file = $statement->fetch();
+
+    if (!$file) {
+        http_response_code(404);
+        exit;
+    }
+
+    header('Content-Type: ' . $file['file_type']);
+    header('Content-Disposition: inline; filename="' . str_replace('"', '', $file['file_name']) . '"');
+    echo $file['file_data'];
+    exit;
+}
+
+function send_status_file(): void
+{
     require_user();
     $id = (int) ($_GET['id'] ?? 0);
-    $statement = db()->prepare('SELECT file_name, file_type, file_data FROM messages WHERE id = ? AND file_data IS NOT NULL');
+    $statement = db()->prepare('SELECT file_name, file_type, file_data FROM statuses WHERE id = ? AND file_data IS NOT NULL AND expires_at > NOW()');
     $statement->execute([$id]);
     $file = $statement->fetch();
 
@@ -313,6 +430,61 @@ function send_file(): void
     header('Content-Disposition: inline; filename="' . str_replace('"', '', $file['file_name']) . '"');
     echo $file['file_data'];
     exit;
+}
+
+function search_users(): void
+{
+    $user = require_user();
+    $term = clean_text($_GET['q'] ?? '');
+
+    if ($term === '' || !preg_match('/^[\p{L} ]{1,70}$/u', $term)) {
+        json_response(['ok' => true, 'users' => []]);
+    }
+
+    $statement = db()->prepare(
+        'SELECT id, name, email FROM users WHERE id <> ? AND name LIKE ? ORDER BY name ASC LIMIT 12'
+    );
+    $statement->execute([$user['id'], '%' . $term . '%']);
+    json_response(['ok' => true, 'users' => $statement->fetchAll()]);
+}
+
+function list_statuses(): void
+{
+    require_user();
+    $statement = db()->query(
+        "SELECT statuses.id, statuses.user_id, statuses.note, statuses.file_name, statuses.file_type,
+                users.name AS user_name, DATE_FORMAT(statuses.created_at, '%d/%m %H:%i') AS created_at
+         FROM statuses
+         JOIN users ON users.id = statuses.user_id
+         WHERE statuses.expires_at > NOW()
+         ORDER BY statuses.created_at DESC
+         LIMIT 30"
+    );
+    json_response(['ok' => true, 'statuses' => $statement->fetchAll()]);
+}
+
+function create_status(): void
+{
+    $user = require_user();
+    $note = clean_text($_POST['note'] ?? '');
+    $file = normalize_file();
+
+    if ($note === '' && !$file) {
+        fail('Escribe una nota o sube un archivo para el estado.');
+    }
+
+    $statement = db()->prepare(
+        'INSERT INTO statuses (user_id, note, file_name, file_type, file_data, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))'
+    );
+    $statement->execute([
+        $user['id'],
+        $note ?: null,
+        $file['name'] ?? null,
+        $file['type'] ?? null,
+        $file['data'] ?? null,
+    ]);
+
+    json_response(['ok' => true]);
 }
 
 function update_account(): void
@@ -343,6 +515,7 @@ function reset_all_accounts(): void
 {
     $pdo = db();
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+    $pdo->exec('TRUNCATE TABLE statuses');
     $pdo->exec('TRUNCATE TABLE messages');
     $pdo->exec('TRUNCATE TABLE users');
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
@@ -355,6 +528,9 @@ $action = $_GET['action'] ?? '';
 switch ($action) {
     case 'file':
         send_file();
+        break;
+    case 'status_file':
+        send_status_file();
         break;
     case 'me':
         json_response(['ok' => true, 'user' => empty($_SESSION['user_id']) ? null : public_user(require_user())]);
@@ -371,6 +547,15 @@ switch ($action) {
         break;
     case 'messages':
         list_messages();
+        break;
+    case 'search_users':
+        search_users();
+        break;
+    case 'statuses':
+        list_statuses();
+        break;
+    case 'create_status':
+        create_status();
         break;
     case 'create_message':
         create_message();

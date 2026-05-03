@@ -5,8 +5,13 @@ const emojis = ["😀", "😂", "😍", "😎", "🥰", "😇", "👍", "🙏", 
 const stickers = ["💟", "🌸", "🦋", "🍓", "☁️", "🌈", "⭐", "🎀", "🍰", "💌"];
 
 let currentUser = null;
+let currentChat = { id: 0, name: "Servidor general" };
 let selectedSticker = "";
+let attachedFile = null;
 let pollTimer = null;
+let cameraStream = null;
+let audioRecorder = null;
+let audioChunks = [];
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -21,11 +26,20 @@ const messagesBox = $("#messages");
 const messageForm = $("#messageForm");
 const messageBody = $("#messageBody");
 const editingId = $("#editingId");
+const recipientId = $("#recipientId");
+const expiresIn = $("#expiresIn");
 const fileInput = $("#fileInput");
 const fileName = $("#fileName");
 const emojiPicker = $("#emojiPicker");
 const stickerPicker = $("#stickerPicker");
 const accountForm = $("#accountForm");
+const userSearch = $("#userSearch");
+const userResults = $("#userResults");
+const storiesStrip = $("#storiesStrip");
+const statusForm = $("#statusForm");
+const cameraModal = $("#cameraModal");
+const cameraPreview = $("#cameraPreview");
+const cameraCanvas = $("#cameraCanvas");
 
 function setStatus(text, isError = false) {
   authStatus.textContent = text;
@@ -41,14 +55,20 @@ function api(action, data = null) {
         body: JSON.stringify(data || {})
       };
 
-  return fetch(`${API}?action=${encodeURIComponent(action)}`, options)
-    .then(async (response) => {
-      const payload = await response.json().catch(() => ({ ok: false, error: "Respuesta invalida del servidor." }));
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "No se pudo completar la accion.");
-      }
-      return payload;
-    });
+  return fetch(`${API}?action=${encodeURIComponent(action)}`, options).then(readResponse);
+}
+
+function apiGet(action, params = {}) {
+  const query = new URLSearchParams({ action, ...params });
+  return fetch(`${API}?${query.toString()}`).then(readResponse);
+}
+
+async function readResponse(response) {
+  const payload = await response.json().catch(() => ({ ok: false, error: "Respuesta invalida del servidor." }));
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || "No se pudo completar la accion.");
+  }
+  return payload;
 }
 
 function cleanLettersInput(input) {
@@ -92,9 +112,13 @@ function enterApp(user) {
   setUser(user);
   authPanel.classList.add("hidden");
   messenger.classList.remove("hidden");
-  loadMessages();
+  selectChat(0, "Servidor general");
+  loadStatuses();
   clearInterval(pollTimer);
-  pollTimer = setInterval(loadMessages, 4500);
+  pollTimer = setInterval(() => {
+    loadMessages();
+    loadStatuses();
+  }, 4500);
 }
 
 function leaveApp() {
@@ -103,6 +127,7 @@ function leaveApp() {
   authPanel.classList.remove("hidden");
   clearInterval(pollTimer);
   messagesBox.innerHTML = "";
+  storiesStrip.innerHTML = "";
 }
 
 function renderPicker(container, items, handler) {
@@ -150,6 +175,7 @@ function renderMessages(messages) {
 
   messagesBox.innerHTML = messages.map((message) => {
     const mine = currentUser && Number(message.user_id) === Number(currentUser.id);
+    const expires = message.expires_at ? `<span>Expira ${escapeText(message.expires_at)}</span>` : "";
     const tools = mine
       ? `<div class="message-tools">
           <button class="tool-button edit" data-id="${message.id}" type="button">Editar</button>
@@ -164,6 +190,7 @@ function renderMessages(messages) {
       <div class="message-body">${escapeText(message.body)}</div>
       ${message.sticker ? `<span class="sticker">${escapeText(message.sticker)}</span>` : ""}
       ${renderAttachment(message)}
+      ${expires}
       ${tools}
     </article>`;
   }).join("");
@@ -171,26 +198,76 @@ function renderMessages(messages) {
   messagesBox.scrollTop = messagesBox.scrollHeight;
 }
 
+function renderStatuses(statuses) {
+  if (!statuses.length) {
+    storiesStrip.innerHTML = `<div class="story-card"><strong>Feed</strong><span>Sin estados todavia</span></div>`;
+    return;
+  }
+
+  storiesStrip.innerHTML = statuses.map((status) => {
+    const src = `${API}?action=status_file&id=${encodeURIComponent(status.id)}`;
+    const type = status.file_type || "";
+    let media = "";
+    if (type.startsWith("image/")) media = `<img class="story-media" src="${src}" alt="">`;
+    if (type.startsWith("audio/")) media = `<audio class="story-audio" controls src="${src}"></audio>`;
+    if (type.startsWith("video/")) media = `<video class="story-media" controls src="${src}"></video>`;
+    return `<article class="story-card">
+      <strong>${escapeText(status.user_name)}</strong>
+      <span>${escapeText(status.note || "Estado multimedia")}</span>
+      <span>${escapeText(status.created_at)}</span>
+      ${media}
+    </article>`;
+  }).join("");
+}
+
 async function loadMessages() {
   if (!currentUser) return;
   try {
-    const payload = await api("messages");
+    const payload = await apiGet("messages", { recipient_id: currentChat.id || "" });
     renderMessages(payload.messages);
   } catch (error) {
     $("#chatHint").textContent = error.message;
   }
 }
 
+async function loadStatuses() {
+  if (!currentUser) return;
+  try {
+    const payload = await apiGet("statuses");
+    renderStatuses(payload.statuses);
+  } catch (error) {
+    storiesStrip.innerHTML = `<div class="story-card"><strong>Feed</strong><span>${escapeText(error.message)}</span></div>`;
+  }
+}
+
+function selectChat(id, name) {
+  currentChat = { id: Number(id) || 0, name };
+  recipientId.value = currentChat.id || "";
+  $("#chatTitle").textContent = currentChat.id ? `Chat con ${name}` : "Servidor general";
+  $("#chatHint").textContent = currentChat.id ? "Mensaje directo privado." : "Feed del servidor general.";
+  resetComposer();
+  loadMessages();
+}
+
 function resetComposer() {
   messageForm.reset();
   selectedSticker = "";
+  attachedFile = null;
   editingId.value = "";
+  recipientId.value = currentChat.id || "";
+  expiresIn.value = "0";
   fileName.textContent = "";
   messageForm.querySelector(".send-button").textContent = "Enviar";
 }
 
+function addFileToForm(formData) {
+  if (attachedFile) {
+    formData.set("file", attachedFile, attachedFile.name);
+  }
+}
+
 document.addEventListener("input", (event) => {
-  if (event.target.matches('input[name="name"]')) cleanLettersInput(event.target);
+  if (event.target.matches('input[name="name"], #userSearch')) cleanLettersInput(event.target);
   if (event.target.matches('input[name="phone"]')) cleanNumbersInput(event.target);
 });
 
@@ -227,8 +304,9 @@ messageForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(messageForm);
   formData.append("sticker", selectedSticker);
+  addFileToForm(formData);
 
-  if (!formData.get("body").trim() && !selectedSticker && !fileInput.files.length && !editingId.value) {
+  if (!formData.get("body").trim() && !selectedSticker && !fileInput.files.length && !attachedFile && !editingId.value) {
     return;
   }
 
@@ -236,6 +314,18 @@ messageForm.addEventListener("submit", async (event) => {
     await api(editingId.value ? "update_message" : "create_message", formData);
     resetComposer();
     await loadMessages();
+  } catch (error) {
+    $("#chatHint").textContent = error.message;
+  }
+});
+
+statusForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formData = new FormData(statusForm);
+  try {
+    await api("create_status", formData);
+    statusForm.reset();
+    await loadStatuses();
   } catch (error) {
     $("#chatHint").textContent = error.message;
   }
@@ -270,6 +360,28 @@ document.addEventListener("play", (event) => {
   });
 }, true);
 
+userSearch.addEventListener("input", async () => {
+  const q = userSearch.value.trim();
+  if (!q) {
+    userResults.innerHTML = `<button class="user-pill" type="button" data-id="0" data-name="Servidor general">Servidor general</button>`;
+    return;
+  }
+
+  try {
+    const payload = await apiGet("search_users", { q });
+    userResults.innerHTML = payload.users.map((user) => (
+      `<button class="user-pill" type="button" data-id="${user.id}" data-name="${escapeText(user.name)}">${escapeText(user.name)}</button>`
+    )).join("") || `<div class="user-pill">Sin resultados</div>`;
+  } catch (error) {
+    userResults.innerHTML = `<div class="user-pill">${escapeText(error.message)}</div>`;
+  }
+});
+
+userResults.addEventListener("click", (event) => {
+  const button = event.target.closest(".user-pill[data-id]");
+  if (button) selectChat(button.dataset.id, button.dataset.name);
+});
+
 $("#emojiBtn").addEventListener("click", () => {
   emojiPicker.classList.toggle("hidden");
   stickerPicker.classList.add("hidden");
@@ -281,10 +393,80 @@ $("#stickerBtn").addEventListener("click", () => {
 });
 
 fileInput.addEventListener("change", () => {
+  attachedFile = null;
   fileName.textContent = fileInput.files[0] ? fileInput.files[0].name : "";
 });
 
-$("#refreshBtn").addEventListener("click", loadMessages);
+$("#cameraBtn").addEventListener("click", async () => {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    cameraPreview.srcObject = cameraStream;
+    cameraModal.classList.remove("hidden");
+  } catch (error) {
+    $("#chatHint").textContent = "No se pudo abrir la camara.";
+  }
+});
+
+$("#captureBtn").addEventListener("click", () => {
+  const width = cameraPreview.videoWidth || 640;
+  const height = cameraPreview.videoHeight || 480;
+  cameraCanvas.width = width;
+  cameraCanvas.height = height;
+  cameraCanvas.getContext("2d").drawImage(cameraPreview, 0, 0, width, height);
+  cameraCanvas.toBlob((blob) => {
+    attachedFile = new File([blob], `camara-${Date.now()}.jpg`, { type: "image/jpeg" });
+    fileInput.value = "";
+    fileName.textContent = attachedFile.name;
+    closeCamera();
+  }, "image/jpeg", 0.9);
+});
+
+function closeCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+  cameraModal.classList.add("hidden");
+}
+
+$("#closeCameraBtn").addEventListener("click", closeCamera);
+
+$("#audioBtn").addEventListener("click", async () => {
+  if (audioRecorder && audioRecorder.state === "recording") {
+    audioRecorder.stop();
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    audioRecorder = new MediaRecorder(stream);
+    audioRecorder.addEventListener("dataavailable", (event) => audioChunks.push(event.data));
+    audioRecorder.addEventListener("stop", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      attachedFile = new File(audioChunks, `audio-${Date.now()}.webm`, { type: "audio/webm" });
+      fileInput.value = "";
+      fileName.textContent = attachedFile.name;
+      $("#audioBtn").classList.remove("recording");
+      $("#audioBtn").textContent = "🎙️";
+    });
+    audioRecorder.start();
+    $("#audioBtn").classList.add("recording");
+    $("#audioBtn").textContent = "■";
+  } catch (error) {
+    $("#chatHint").textContent = "No se pudo abrir el microfono.";
+  }
+});
+
+$("#refreshBtn").addEventListener("click", () => {
+  loadMessages();
+  loadStatuses();
+});
+
+$("#themeBtn").addEventListener("click", () => {
+  document.body.classList.toggle("dark");
+  localStorage.setItem("pastelTheme", document.body.classList.contains("dark") ? "dark" : "light");
+});
 
 $("#logoutBtn").addEventListener("click", async () => {
   await api("logout").catch(() => null);
@@ -327,6 +509,12 @@ renderPicker(stickerPicker, stickers, (sticker) => {
   selectedSticker = sticker;
   stickerPicker.classList.add("hidden");
 });
+
+if (localStorage.getItem("pastelTheme") === "dark") {
+  document.body.classList.add("dark");
+}
+
+userResults.innerHTML = `<button class="user-pill" type="button" data-id="0" data-name="Servidor general">Servidor general</button>`;
 
 api("me")
   .then((payload) => {

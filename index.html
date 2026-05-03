@@ -71,9 +71,18 @@
         </div>
 
         <div class="sidebar-actions">
+          <button class="ghost-button" id="themeBtn" type="button">Modo oscuro</button>
           <button class="ghost-button" id="editAccountBtn" type="button">Editar cuenta</button>
           <button class="danger-button" id="deleteAccountBtn" type="button">Borrar cuenta</button>
           <button class="ghost-button" id="logoutBtn" type="button">Salir</button>
+        </div>
+
+        <div class="search-box">
+          <label>
+            Buscar por nombre
+            <input type="text" id="userSearch" placeholder="Solo letras">
+          </label>
+          <div class="user-results" id="userResults"></div>
         </div>
 
         <form class="account-form hidden" id="accountForm">
@@ -90,31 +99,60 @@
       </aside>
 
       <section class="chat-panel">
+        <div class="stories-strip" id="storiesStrip"></div>
+
         <header class="chat-header">
           <div>
-            <h2>Chat general</h2>
-            <p id="chatHint">CRUD activo para mensajes y cuenta.</p>
+            <h2 id="chatTitle">Servidor general</h2>
+            <p id="chatHint">Feed, mensajes directos, camara, audios y notas.</p>
           </div>
           <button class="ghost-button refresh" id="refreshBtn" type="button">Actualizar</button>
         </header>
 
         <div class="messages" id="messages" aria-live="polite"></div>
 
+        <form class="status-form" id="statusForm">
+          <input type="text" name="note" id="statusNote" maxlength="140" placeholder="Subir estado o nota">
+          <input class="file-input" id="statusFile" type="file" name="file" accept="image/*,video/*,audio/*">
+          <label class="icon-button file-label" for="statusFile" aria-label="Archivo para estado">🖼️</label>
+          <button class="primary-button small" type="submit">Publicar</button>
+        </form>
+
         <form class="composer" id="messageForm">
           <div class="picker-row hidden" id="emojiPicker"></div>
           <div class="picker-row hidden" id="stickerPicker"></div>
           <input type="hidden" name="editing_id" id="editingId">
+          <input type="hidden" name="recipient_id" id="recipientId">
           <textarea name="body" id="messageBody" rows="1" maxlength="1200" placeholder="Escribe un mensaje"></textarea>
           <input class="file-input" id="fileInput" type="file" name="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt,.zip">
+          <select name="expires_in" id="expiresIn" aria-label="Duracion del mensaje">
+            <option value="0">Sin duracion</option>
+            <option value="60">1 minuto</option>
+            <option value="3600">1 hora</option>
+            <option value="86400">1 dia</option>
+          </select>
           <div class="composer-actions">
             <button class="icon-button" id="emojiBtn" type="button" aria-label="Emojis">😊</button>
             <button class="icon-button" id="stickerBtn" type="button" aria-label="Stickers">💟</button>
+            <button class="icon-button" id="cameraBtn" type="button" aria-label="Camara">📷</button>
+            <button class="icon-button" id="audioBtn" type="button" aria-label="Audio">🎙️</button>
             <label class="icon-button file-label" for="fileInput" aria-label="Archivo">📎</label>
             <button class="primary-button send-button" type="submit">Enviar</button>
           </div>
           <p class="file-name" id="fileName"></p>
         </form>
       </section>
+    </section>
+
+    <section class="media-modal hidden" id="cameraModal" aria-label="Camara">
+      <div class="media-box">
+        <video id="cameraPreview" autoplay playsinline muted></video>
+        <canvas id="cameraCanvas" class="hidden"></canvas>
+        <div class="composer-actions">
+          <button class="primary-button" id="captureBtn" type="button">Tomar foto</button>
+          <button class="ghost-button" id="closeCameraBtn" type="button">Cerrar</button>
+        </div>
+      </div>
     </section>
   </main>
 
